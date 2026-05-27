@@ -50,9 +50,9 @@ class Conversation(BaseModel):
     messages: List[Dict[str, Any]]
 
 
-@app.get("/")
-async def root():
-    """Health check endpoint."""
+@app.get("/api/health")
+async def health():
+    """Health check endpoint. Lives under /api so the SPA can be served at /."""
     return {"status": "ok", "service": "LLM Council API"}
 
 
