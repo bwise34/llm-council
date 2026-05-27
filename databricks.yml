@@ -1,0 +1,18 @@
+bundle:
+  name: llm_council_bundle
+
+resources:
+  apps:
+    llm_council:
+      name: "llm-council"
+      source_code_path: .
+      description: "LLM Council — multi-model deliberation web app"
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      # TODO: set this to your workspace URL (or leave commented to use your
+      # default profile in ~/.databrickscfg)
+      # host: https://<workspace>.cloud.databricks.com
