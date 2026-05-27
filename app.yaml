@@ -1,0 +1,7 @@
+command: ["python", "run_app.py"]
+
+env:
+  - name: OPENROUTER_API_KEY
+    valueFrom: openrouter_api_key
+  - name: DATA_DIR
+    value: "/Workspace/Users/bwise@redventures.com/llm-council-data/conversations"

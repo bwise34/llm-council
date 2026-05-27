@@ -2,7 +2,9 @@
  * API client for the LLM Council backend.
  */
 
-const API_BASE = 'http://localhost:8001';
+// Same-origin in all environments. In Databricks Apps the SPA and API
+// share one origin; in local dev Vite proxies /api to :8001 (see vite.config.js).
+const API_BASE = '';
 
 export const api = {
   /**
