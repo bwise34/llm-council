@@ -22,5 +22,8 @@ CHAIRMAN_MODEL = "anthropic/claude-opus-4.7"
 # OpenRouter API endpoint
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-# Data directory for conversation storage
-DATA_DIR = "data/conversations"
+# Data directory for conversation storage.
+# In local dev this defaults to a relative path; in Databricks Apps it is
+# set via app.yaml to a workspace files path (e.g.
+# /Workspace/Users/<email>/data/conversations).
+DATA_DIR = os.getenv("DATA_DIR", "data/conversations")

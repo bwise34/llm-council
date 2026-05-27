@@ -79,9 +79,59 @@ npm run dev
 
 Then open http://localhost:5173 in your browser.
 
+## Deploy to Databricks Apps
+
+This app can also be deployed as a [Databricks App](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/) — a serverless, workspace-authenticated web service. The same FastAPI backend serves both the React SPA (built to static assets) and the `/api/*` routes on a single port.
+
+### One-time setup (in Databricks)
+
+1. **Create a secret** with your OpenRouter key (skip if already done):
+   ```bash
+   databricks secrets create-scope finserv-ds-ai-api    # only if scope doesn't exist
+   databricks secrets put-secret finserv-ds-ai-api OPENROUTER_API_KEY
+   ```
+2. **Create the app** in the workspace UI (`Apps` → `+ Create app` → `Custom`) or via CLI:
+   ```bash
+   databricks apps create llm-council
+   ```
+3. **Add the OpenRouter secret as an app resource** so `app.yaml`'s `valueFrom` can reference it. In the app's `Resources` section: `+ Add resource → Secret`, set scope `finserv-ds-ai-api`, key `OPENROUTER_API_KEY`, and **resource key `openrouter_api_key`** (this name must match `app.yaml`).
+4. **Create the conversations folder** (only the first time):
+   - In the workspace UI, create `data/conversations/` under your user folder.
+   - Right-click → Permissions → grant the app's service principal `Can Edit`. The service principal is shown on the app's Overview page; its name is the app's client ID.
+
+### Deploy
+
+```bash
+# 1. Build the React frontend so frontend/dist/ exists locally
+cd frontend && npm install && npm run build && cd ..
+
+# 2. Sync your project to the workspace (creates the folder if missing)
+databricks sync . /Workspace/Users/bwise@redventures.com/llm-council
+
+# 3. Deploy (starts or updates the running app)
+databricks apps deploy llm-council \
+  --source-code-path /Workspace/Users/bwise@redventures.com/llm-council
+```
+
+The app URL is shown on the app's Overview page (`https://llm-council-<workspace-id>.<region>.databricksapps.com`).
+
+### How the Databricks deployment differs from local
+
+| | Local (`./start.sh`) | Databricks App |
+|---|---|---|
+| Processes | 2 (FastAPI :8001 + Vite :5173) | 1 (uvicorn on `$DATABRICKS_APP_PORT`) |
+| Frontend served by | Vite dev server | FastAPI `StaticFiles` from `frontend/dist/` |
+| `/api` requests | Vite proxy → :8001 | Same-origin to the same FastAPI process |
+| `OPENROUTER_API_KEY` | `.env` (loaded by `python-dotenv`) | Databricks secret via `valueFrom` |
+| `DATA_DIR` | `./data/conversations` | `/Workspace/Users/.../data/conversations` |
+| Auth | none | Workspace SSO at the ingress |
+
+The relevant files for Databricks deployment are `app.py`, `run_app.py`, `app.yaml`, and `requirements.txt` at the repo root.
+
 ## Tech Stack
 
 - **Backend:** FastAPI (Python 3.10+), async httpx, OpenRouter API
 - **Frontend:** React + Vite, react-markdown for rendering
-- **Storage:** JSON files in `data/conversations/`
+- **Storage:** JSON files — local `data/conversations/` or a workspace path on Databricks
 - **Package Management:** uv for Python, npm for JavaScript
+- **Hosting:** Local dev or Databricks Apps (serverless)

@@ -13,8 +13,9 @@ LLM Council is a 3-stage deliberation system where multiple LLMs collaboratively
 **`config.py`**
 - Contains `COUNCIL_MODELS` (list of OpenRouter model identifiers)
 - Contains `CHAIRMAN_MODEL` (model that synthesizes final answer)
-- Uses environment variable `OPENROUTER_API_KEY` from `.env`
-- Backend runs on **port 8001** (NOT 8000 - user had another app on 8000)
+- Reads `OPENROUTER_API_KEY` from env (loaded from `.env` locally, injected via Databricks secret in prod)
+- Reads `DATA_DIR` from env, defaults to `data/conversations`
+- In local dev the backend runs on **port 8001**; in Databricks Apps the port comes from `DATABRICKS_APP_PORT`
 
 **`openrouter.py`**
 - `query_model()`: Single async model query
@@ -41,9 +42,10 @@ LLM Council is a 3-stage deliberation system where multiple LLMs collaboratively
 - Note: metadata (label_to_model, aggregate_rankings) is NOT persisted to storage, only returned via API
 
 **`main.py`**
-- FastAPI app with CORS enabled for localhost:5173 and localhost:3000
-- POST `/api/conversations/{id}/message` returns metadata in addition to stages
-- Metadata includes: label_to_model mapping and aggregate_rankings
+- FastAPI app. CORS allows `localhost:5173`/`localhost:3000` — harmless in prod (same-origin) and useful for legacy local-dev where the React app talks to a separate origin
+- Both `/api/conversations/{id}/message` (blocking) and `/api/conversations/{id}/message/stream` (SSE) return metadata
+- Stream events: `stage1_start/complete`, `stage2_start/complete`, `stage3_start/complete`, `title_complete`, `complete`, `error`
+- Metadata includes: label_to_model mapping and aggregate_rankings (not persisted to disk — only on live API responses)
 
 ### Frontend Structure (`frontend/src/`)
 
@@ -115,9 +117,10 @@ This strict format allows reliable parsing while still getting thoughtful evalua
 All backend modules use relative imports (e.g., `from .config import ...`) not absolute imports. This is critical for Python's module system to work correctly when running as `python -m backend.main`.
 
 ### Port Configuration
-- Backend: 8001 (changed from 8000 to avoid conflict)
-- Frontend: 5173 (Vite default)
-- Update both `backend/main.py` and `frontend/src/api.js` if changing
+- Local backend: 8001 (changed from 8000 to avoid conflict on the maintainer's machine)
+- Local frontend: 5173 (Vite default); Vite proxies `/api/*` to `:8001`
+- Databricks Apps: `run_app.py` reads `DATABRICKS_APP_PORT` and starts uvicorn on it
+- `frontend/src/api.js` uses `API_BASE = ''` (relative paths) in both environments
 
 ### Markdown Rendering
 All ReactMarkdown components must be wrapped in `<div className="markdown-content">` for proper spacing. This class is defined globally in `index.css`.
@@ -144,6 +147,24 @@ Models are hardcoded in `backend/config.py`. Chairman can be same or different f
 ## Testing Notes
 
 Use `test_openrouter.py` to verify API connectivity and test different model identifiers before adding to council. The script tests both streaming and non-streaming modes.
+
+## Databricks Apps Deployment
+
+The repo doubles as a Databricks App. Four files at the repo root drive this:
+
+- **`app.py`** — top-level FastAPI entry. Re-exports `backend.main:app` and (if `frontend/dist/` exists) mounts it at `/` as `StaticFiles(html=True)`. Routes resolve `/api/*` to the FastAPI routes first; everything else falls through to the SPA's `index.html` for client-side routing.
+- **`run_app.py`** — launcher used by Databricks. Reads `DATABRICKS_APP_PORT` and calls `uvicorn.run("app:app", host="0.0.0.0", port=port)`. The launcher pattern avoids relying on argv substitution rules in `app.yaml`.
+- **`app.yaml`** — Databricks Apps execution config. `command: ["python", "run_app.py"]`. Declares `OPENROUTER_API_KEY` via `valueFrom: openrouter_api_key` (must match a resource declared on the app) and `DATA_DIR` as a workspace path.
+- **`requirements.txt`** — explicit Python deps for the Databricks Apps runtime (mirrors `pyproject.toml`).
+
+### How the two environments coexist
+- **Local (`./start.sh`):** unchanged two-process flow. Backend module entrypoint `backend/main.py` runs on `:8001`. Vite runs on `:5173` and proxies `/api/*` to `:8001` via `vite.config.js`. `app.py` and `run_app.py` are unused.
+- **Databricks Apps:** single uvicorn process, both API and SPA on one origin/port. Auth handled by the Databricks ingress (workspace SSO); identity headers like `X-Forwarded-Email` are forwarded but unused today. Conversations persist at `/Workspace/Users/bwise@redventures.com/data/conversations/` via standard POSIX I/O against the workspace files mount — the app's service principal must have `Can Edit` on that folder.
+
+### Constraints worth remembering
+- All routes must remain under `/api/*` (a Databricks Apps requirement for OAuth bearer auth). Don't add public routes outside `/api`; put SPA assets under `/` via StaticFiles only.
+- Never inline secrets in `app.yaml`'s `value` field — always `valueFrom` against an app resource.
+- `frontend/dist/` must exist at deploy time (run `npm run build` before `databricks sync`). It's gitignored locally; that's fine.
 
 ## Data Flow Summary
 
